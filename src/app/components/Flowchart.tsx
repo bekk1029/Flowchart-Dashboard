@@ -55,7 +55,8 @@ const getInitialEdges = () => {
 };
 
 // WebSocket сервэр рүү холбогдох (deploy хийх үед тохируулахаар)
-const socketURL = (import.meta as any).env?.VITE_WEBSOCKET_URL || 'http://localhost:3001';
+const isProd = (import.meta as any).env?.PROD;
+const socketURL = (import.meta as any).env?.VITE_WEBSOCKET_URL || (isProd ? window.location.origin : 'http://localhost:3001');
 const socket = io(socketURL);
 
 export function Flowchart() {

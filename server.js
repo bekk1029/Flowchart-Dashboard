@@ -3,9 +3,17 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
+
+// Front-end Build файлуудыг сервэр дээрээс дуудах (Render-д deploy хийхэд зориулав)
+app.use(express.static(path.join(__dirname, 'dist')));
 
 const server = createServer(app);
 const io = new Server(server, {
@@ -64,7 +72,12 @@ io.on('connection', (socket) => {
   });
 });
 
+// React-Route ашиглаж байгаа бол хуудас шилжих үед 404 өгөхөөс сэргийлэх
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Сервер ${PORT} порт дээр аслаа. (WebSocket Server)`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Сервер ${PORT} порт дээр аслаа. (Асаалттай: UI болон WebSocket)`);
 });
