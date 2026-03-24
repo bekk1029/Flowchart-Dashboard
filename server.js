@@ -73,7 +73,7 @@ io.on('connection', (socket) => {
 });
 
 // React-Route ашиглаж байгаа бол хуудас шилжих үед 404 өгөхөөс сэргийлэх
-app.get('*', (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
