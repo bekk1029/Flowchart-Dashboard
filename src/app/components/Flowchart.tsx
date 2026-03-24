@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { io } from 'socket.io-client';
 import {
   ReactFlow,
   MiniMap,
@@ -30,9 +31,96 @@ const edgeTypes = {
   smoothstep: EditableEdge,
 };
 
+const LOCAL_STORAGE_KEY_NODES = 'flowchart-nodes';
+const LOCAL_STORAGE_KEY_EDGES = 'flowchart-edges';
+
+const getInitialNodes = () => {
+  try {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_NODES);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.error('Failed to parse nodes from local storage:', e);
+  }
+  return initialNodes;
+};
+
+const getInitialEdges = () => {
+  try {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_EDGES);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.error('Failed to parse edges from local storage:', e);
+  }
+  return initialEdges;
+};
+
+// WebSocket сервэр рүү холбогдох (deploy хийх үед тохируулахаар)
+const socketURL = import.meta.env.VITE_WEBSOCKET_URL || 'http://localhost:3001';
+const socket = io(socketURL);
+
 export function Flowchart() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(getInitialNodes());
+  const [edges, setEdges, onEdgesChange] = useEdgesState(getInitialEdges());
+  
+  // Өөрөө өөрчилсөн эсвэл бусад хүнээс ирсэн өөрчлөлтийг ялгах хувьсагчууд
+  const isRemoteUpdateNodes = useRef(false);
+  const isRemoteUpdateEdges = useRef(false);
+
+  useEffect(() => {
+    // Сервэрээс анхны өгөгдлийг хүлээж авах
+    socket.on('init', (data) => {
+      isRemoteUpdateNodes.current = true;
+      isRemoteUpdateEdges.current = true;
+      if (data.nodes) setNodes(data.nodes);
+      if (data.edges) setEdges(data.edges);
+    });
+
+    // Бусад хүн нод зөөвөл / өөрчилбөл
+    socket.on('updateNodes', (newNodes) => {
+      isRemoteUpdateNodes.current = true;
+      setNodes(newNodes);
+    });
+
+    // Бусад хүн холбоос үүсгэвэл / өөрчилбөл
+    socket.on('updateEdges', (newEdges) => {
+      isRemoteUpdateEdges.current = true;
+      setEdges(newEdges);
+    });
+
+    socket.on('reset', () => {
+      isRemoteUpdateNodes.current = true;
+      isRemoteUpdateEdges.current = true;
+      setNodes(initialNodes);
+      setEdges(initialEdges);
+      localStorage.removeItem(LOCAL_STORAGE_KEY_NODES);
+      localStorage.removeItem(LOCAL_STORAGE_KEY_EDGES);
+    });
+
+    return () => {
+      socket.off('init');
+      socket.off('updateNodes');
+      socket.off('updateEdges');
+      socket.off('reset');
+    };
+  }, [setNodes, setEdges]);
+
+  useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_KEY_NODES, JSON.stringify(nodes));
+    if (!isRemoteUpdateNodes.current) {
+      socket.emit('updateNodes', nodes); // Өөрчлөлтийг бусад хүмүүст цацах
+    } else {
+      isRemoteUpdateNodes.current = false;
+    }
+  }, [nodes]);
+
+  useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_KEY_EDGES, JSON.stringify(edges));
+    if (!isRemoteUpdateEdges.current) {
+      socket.emit('updateEdges', edges); // Өөрчлөлтийг бусад хүмүүст цацах
+    } else {
+      isRemoteUpdateEdges.current = false;
+    }
+  }, [edges]);
 
   const onConnect = useCallback(
     (params: Edge | Connection) => setEdges((eds) => addEdge({ ...params, type: 'smoothstep', animated: true }, eds)),
@@ -82,6 +170,19 @@ export function Flowchart() {
             className="px-4 py-2 bg-sky-900/50 hover:bg-sky-800/80 text-sky-100 text-xs font-semibold rounded-lg border border-sky-800/50 transition"
           >
             + Шийдвэр нэмэх
+          </button>
+          <button 
+            onClick={() => {
+              if (window.confirm("Бүх өөрчлөлтийг устгаж анхны байдалд оруулах уу? (Бусад бүх хүн дээр мөн адил устгагдана)")) {
+                localStorage.removeItem(LOCAL_STORAGE_KEY_NODES);
+                localStorage.removeItem(LOCAL_STORAGE_KEY_EDGES);
+                socket.emit('reset'); // Бусад хүмүүст 'reset' сигнал явуулах
+                window.location.reload();
+              }
+            }}
+            className="px-4 py-2 bg-red-900/50 hover:bg-red-800/80 text-red-100 text-xs font-semibold rounded-lg border border-red-800/50 transition ml-2"
+          >
+            ↺ Анхны байдалд
           </button>
         </Panel>
         <Controls className="bg-slate-800 border-slate-700 fill-slate-200" />
